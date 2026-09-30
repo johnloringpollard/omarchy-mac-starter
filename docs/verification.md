@@ -11,6 +11,8 @@ python3 scripts/check_export.py
 
 The tests use temporary home directories and synthetic Git repositories. They cover preview without writes, repeated installation, interrupted-operation recovery, selective restoration, clock reuse, stock-widget replacement, preservation of later edits, symlink refusal, dependency revision pinning, patch checksum checks, modified checkout refusal, and plugin discovery before enablement.
 
+The `setup` tests replace external commands with recording fakes. They check selection, cancellation, dry-run behavior, package/backend installation order, theme activation, retry behavior, and the boundary between installation and personal configuration. They do not install packages or run backend installers on the test machine.
+
 GitHub Actions runs the same Python checks and parses the authored Lua modules. It does not boot Omarchy or connect Apple hardware.
 
 The initial release was also checked against the installed Omarchy plugin validator. All seven locked upstream revisions were fetched from GitHub, and the functional and shadow patches applied to those exact revisions in temporary directories.

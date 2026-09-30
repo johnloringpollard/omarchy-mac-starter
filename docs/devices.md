@@ -1,129 +1,54 @@
-# Set up optional devices and services
+# Configure your plugins
 
-Run commands from the starter checkout unless a step changes directory. A plugin source install does not install its backend or connect to your devices. Run setup from an interactive terminal so upstream installers can request administrator access when needed.
+Run `./setup` to install the plugins you want. After installation, use their panels and upstream guides for configuration. Device pairing, personal preferences, accounts, and connections to other computers are yours to choose.
 
-`./plugins install NAME` previews installation. Add `--apply` to fetch the pinned revision and enable its widget. Add `--with-shadows` at initial installation to apply available panel-shadow patches after installing the core desktop module. To change the shadow selection later, remove the managed checkout first.
+| Plugin | Configure after installation | Upstream guide |
+| --- | --- | --- |
+| Magic Mouse | Pair the mouse and adjust pointer, scrolling, and gestures. | [Magic Mouse for Omarchy](https://github.com/maikunari/omarchy-magic-mouse#readme) |
+| AirPods | Pair your AirPods and choose supported listening modes. | [Omapods](https://github.com/thisisgm/omarchy-pods#readme) |
+| AirPlay | Select a receiver, pair if needed, and choose a screen to share. | [AirPlay Mirror](https://github.com/ETroll/omarchy-airplay#readme) |
+| Magic Keyboard/Trackpad | Connect devices and choose function-key or trackpad preferences. The privileged Fn helper is optional. | [OMagic](https://github.com/betnbd/Omagic#readme) |
+| Calendar | Connect your calendar, then enable OmaCal in place of your existing clock. It is installed without enabling a second clock. | [OmaCal](https://github.com/crmne/omacal#readme) |
+| Messages | Connect Blip to a reachable Mac signed into Messages. Its bridge setup runs separately. | [Blip](https://github.com/nixfred/blip#readme) |
+| Activity Monitor | Choose the panel options you want. The privileged power-reading helper is optional. | [Activity Monitor](https://github.com/stappmus/omarchy-activity-monitor#readme) |
 
-## Magic Mouse
+AirPlay sends the Linux desktop to a compatible receiver; it does not receive an iPhone screen. OMagic does not provide Touch ID. AirPods use the plugin's matching daemon, not an arbitrary LibrePods build.
+
+## Advanced installation
+
+`./setup` is the normal installation path. The lower-level tool supports individual source installs and explicit inspection:
 
 ```bash
+./plugins list
+./plugins install magic-mouse
 ./plugins install magic-mouse --apply --with-shadows
-cd ~/.config/omarchy/plugins/io.github.maikunari.magic-mouse
-bash install.sh
 ```
 
-The upstream installer installs the Python daemon and its service, grants device access through udev, and configures the kernel mouse driver. It can install `python-evdev` and request sudo access. Read its output and complete any reconnect or login instructions.
+The lower-level `plugins` command installs source only. Unlike `setup`, it does not install packages or backend daemons. Exact revisions and patches are in `dependencies.lock.json`.
 
-The functional patch includes USB-C identifiers, asynchronous battery queries, edge-contact rejection, vertical scrolling during selection, click/drag gesture suppression, and improved short scroll strokes. The optional shadow patch changes only the panel presentation. A current Omarchy hover API compatibility change is part of the functional patch.
+Do not run `omarchy plugin update` on starter-managed patched checkouts. That bypasses the reviewed revision and local patches. Preserve your edits before changing an installed source version.
 
-`modules/magic-mouse/config.toml` is a portable tuning preset. Back up your existing `~/.config/magic-mouse/config.toml` before copying it there. The starter does not overwrite mouse tuning automatically. Adjust tracking and scroll speed for your display and hand movement.
+## Removal
 
-Check the service and pair the mouse through Bluetooth settings:
+Complete upstream backend cleanup before removing its source checkout. The starter's plugin removal disables the widget and removes only an unchanged checkout. It preserves packages, device rules, services, pairing information, and account data, and saves the latest widget settings locally.
 
-```bash
-systemctl --user status magic-mouse.service
-```
-
-Verify small scroll movements, momentum, horizontal scrolling, text selection while scrolling, two-finger workspace swipes, and battery readings. A running service alone does not prove these interactions work.
-
-## AirPods
-
-```bash
-./plugins install airpods --apply --with-shadows
-cd ~/.config/omarchy/plugins/io.github.thisisgm.omapods
-bash setup
-```
-
-This builds the plugin's modified LibrePods daemon and installs it under `~/.local`. It requires CMake, Ninja, Qt6 connectivity/tools/declarative, pkgconf, libpulse, and OpenSSL. The setup script installs its listed missing packages and enables `librepods.service`. If CMake reports missing OpenSSL, install the Arch `openssl` package.
-
-Pair your AirPods through Bluetooth settings, then check:
-
-```bash
-systemctl --user status librepods.service
-```
-
-The widget can hide while disconnected. Test pod/case battery readings and the listening modes supported by your model. Do not replace this daemon with an arbitrary LibrePods build: the widget expects this fork's status file and control interface.
-
-The source machine's automatic output-switching script contains a specific Bluetooth address. It is intentionally excluded. Choose an audio output through the normal audio panel.
-
-## AirPlay mirroring
-
-```bash
-./plugins install airplay --apply
-omarchy pkg add avahi jq gstreamer gst-plugins-base gst-plugins-good gst-plugins-bad gst-plugins-ugly gst-libav pipewire xdg-desktop-portal-hyprland
-omarchy pkg aur add doubletake-git
-sudo systemctl enable --now avahi-daemon
-```
-
-The source setup has `doubletake-git 0.4.0.r35.gae06722-1`. Arch/AUR package versions follow your configured repositories; the plugin commit is pinned separately. Review the AUR build instructions when your package helper presents them.
-
-Open the AirPlay widget, select a receiver on your local network, and enter its displayed PIN if requested. The Wayland portal asks which screen or window to share. Audio behavior depends on the plugin's audio setting and backend support.
-
-This sends the Linux desktop to an Apple TV or compatible receiver. It does not receive an iPhone screen. Test a session longer than two minutes to verify the included timeout fix. Use the plugin's receiver-specific firewall controls only if your firewall blocks streaming; do not open broad port ranges to untrusted networks.
-
-## Magic Keyboard and Magic Trackpad
-
-```bash
-./plugins install magic-devices --apply
-```
-
-Use the OMagic panel to connect devices and apply trackpad preferences. Its optional Fn-mode helper is a separate administrator installation described in the plugin README. The helper was not installed on the source machine, so this starter does not claim it was physically verified. OMagic does not provide Touch ID authentication.
-
-## Calendar and top-right day/time
-
-OmaCal source installation deliberately stops before enabling its widget, to avoid creating a second clock:
-
-```bash
-./plugins install calendar --apply
-```
-
-For a fresh Omarchy setup, configure OmaCal **before** installing the core desktop module:
-
-```bash
-omarchy plugin disable omarchy.clock
-omarchy plugin enable crmne.omacal
-omarchy bar move crmne.omacal --section right
-```
-
-If your clock already has a custom ID, disable that clock instead of `omarchy.clock`. If the core starter is already installed, restore its configuration with `./uninstall --apply` first, replace the clock, then reinstall the core. The installer will recognize OmaCal, preserve its settings, and apply `dddd h:mm AP` at the right edge.
-
-To connect HEY, install `hey-cli` and `jq`, then run `hey setup` interactively. Account authentication stays on your machine. Without an account backend, do not assume the calendar contains your events.
-
-## iMessage and contacts
-
-```bash
-./plugins install messages --apply
-omarchy pkg add openssh bun jq libnotify wl-clipboard xdg-utils
-cd ~/.config/omarchy/plugins/nixfred.blip
-bash scripts/blip-setup
-```
-
-Blip requires a reachable Mac signed into Messages. Setup asks for the Mac's SSH destination, changes local SSH configuration, installs command-line shims, and installs bridge tools on the Mac. Follow its Full Disk Access and Automation permission instructions on macOS.
-
-This setup is optional and contacts a second machine. Inspect the upstream setup script before running it. No hostnames, SSH keys, allowlists, or message history are supplied by this repository.
-
-## Activity Monitor
-
-```bash
-./plugins install activity-monitor --apply --with-shadows
-```
-
-The panel shows CPU, memory, storage, and process information. Its optional privileged power-reading helper is not installed by this starter.
-
-## Remove a device integration
-
-Complete backend cleanup **before** deleting its source checkout. `./plugins remove NAME --apply` removes only an unchanged starter-managed checkout and disables its widget. It preserves packages, device rules, services, pairing information, and account data. Its removal record saves the latest widget settings locally when the live shell is used.
-
-| Module | Cleanup before source removal |
+| Plugin | Cleanup before removing the checkout |
 | --- | --- |
-| Magic Mouse | Run `bash uninstall.sh` from the plugin checkout. Inspect the upstream script and its output; it preserves tuning and some input configuration. |
-| AirPods | Disable/stop `librepods.service`. Inspect `daemon/build/install_manifest.txt` and remove only the installed files it lists. Keep the manifest until cleanup is complete. Preserve pairing data unless you intend to pair again. |
-| Magic devices | Run `python3 omagic.py revert-trackpad` from the checkout if you applied its trackpad profile. Remove any optional Fn helper through its documented upstream process. |
-| AirPlay | Stop mirroring. Use the widget to forget receivers and remove plugin-created firewall rules if desired. Source removal leaves DoubleTake and Avahi installed. |
-| Messages | Follow upstream cleanup for local shims, SSH configuration, and remote Mac tools. Source removal does not remove that bridge. |
-| Calendar | Restore your previous clock after disabling OmaCal. Account credentials remain local. |
+| Magic Mouse | Run its `uninstall.sh` and follow the upstream removal instructions. |
+| AirPods | Stop/disable `librepods.service`. Use `daemon/build/install_manifest.txt` to identify installed files. Keep that manifest until cleanup is complete. |
+| Magic Keyboard/Trackpad | Revert an applied trackpad profile and remove the optional Fn helper through the upstream instructions if you installed it. |
+| AirPlay | Stop mirroring. Forget receivers or remove plugin-created firewall rules if you want to. DoubleTake and Avahi remain installed. |
+| Messages | Follow upstream cleanup for local shims, SSH configuration, and any remote Mac tools you configured. |
+| Calendar | Restore your previous clock after disabling OmaCal. |
 | Activity Monitor | Remove any optional privileged helper through its upstream instructions. |
 
-Generated build output, source edits, added local branches, and stashes make source removal refuse. Preserve those artifacts outside the checkout, complete backend cleanup, and resolve the reported differences before retrying. In particular, archive the AirPods build directory after using its install manifest; do not discard the manifest to satisfy a clean-tree check.
+Then preview and remove the source checkout:
 
-Remove plugins installed with `--with-shadows` before uninstalling the shared desktop module, or migrate their panels back to upstream styling first.
+```bash
+./plugins remove magic-mouse
+./plugins remove magic-mouse --apply
+```
+
+Removal refuses generated build output, source edits, added branches, or stashes. Preserve those outside the checkout and complete backend cleanup before retrying. Archive the AirPods build directory after using its install manifest; do not discard the manifest just to satisfy the clean-tree check.
+
+Remove shadow-enabled plugins before uninstalling the shared desktop module, or migrate their panels back to upstream styling first. If you configured a different clock after core installation, restore the previous clock identity before core uninstall so it can restore its recorded settings.
