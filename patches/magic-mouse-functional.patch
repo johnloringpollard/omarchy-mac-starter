@@ -1,0 +1,443 @@
+diff --git a/README.md b/README.md
+index 0224ed7..dfd7f6c 100644
+--- a/README.md
++++ b/README.md
+@@ -113,6 +113,7 @@ effective config as JSON.
+ | the curve is right but everything is a touch off | `pointer.speed` 0.9 / 1.1 |
+ | scroll starts when I only meant to click | raise `scroll.start_mm` (1.2) or `scroll.settle_ms` (250) |
+ | have to move the finger too far before it scrolls | lower `scroll.start_mm` (0.5) |
++| scrolling stops when gripping the sides | local edge filter: `scroll.edge_margin_percent = 15` ignores touches starting in the outer 15% of each side; 0 disables it |
+ | scrolling backwards | flip `scroll.natural` |
+ | forward/back inverted only on my model | flip `scroll.invert_y` |
+ | glide too long / too short | `momentum.decay` 0.95 / 0.985 |
+diff --git a/bin/magic-mouse-battery-query b/bin/magic-mouse-battery-query
+index 2cfc83a..51b7942 100755
+--- a/bin/magic-mouse-battery-query
++++ b/bin/magic-mouse-battery-query
+@@ -11,7 +11,7 @@ import fcntl, glob, os, struct, sys
+ def hidraw_for_magic_mouse():
+     for p in sorted(glob.glob('/sys/class/hidraw/hidraw*')):
+         ue = open(f'{p}/device/uevent').read()
+-        if 'HID_ID=0005:0000004C:00000269' in ue or 'HID_ID=0005:000005AC:0000030D' in ue:
++        if any(hid_id in ue for hid_id in ('HID_ID=0005:0000004C:00000269', 'HID_ID=0005:0000004C:00000323', 'HID_ID=0005:000005AC:0000030D')):
+             return '/dev/' + os.path.basename(p)
+     return None
+ 
+diff --git a/bin/magic-mouse-daemon b/bin/magic-mouse-daemon
+index 037b1c7..b2d2f28 100755
+--- a/bin/magic-mouse-daemon
++++ b/bin/magic-mouse-daemon
+@@ -38,7 +38,7 @@ from evdev import InputDevice, UInput, ecodes as e
+ 
+ VIRT_NAME = "magic-mouse-omarchy"
+ APPLE_VENDORS = {0x004C, 0x05AC}
+-MAGIC_MOUSE_PRODUCTS = {0x030D, 0x0269}  # Magic Mouse 1, Magic Mouse 2
++MAGIC_MOUSE_PRODUCTS = {0x030D, 0x0269, 0x0323}  # Magic Mouse 1, Magic Mouse 2, USB-C
+ CONFIG_PATH = os.path.expanduser(
+     os.environ.get("MAGIC_MOUSE_CONFIG", "~/.config/magic-mouse/config.toml")
+ )
+@@ -75,6 +75,8 @@ DEFAULTS = {
+         "settle_counts": 4.0,  # ...where "moving" means more than this many raw counts in that window
+         "accel": 0.6,  # 0 = linear, 1 = strong ramp with finger speed
+         "horizontal": True,
++        "edge_margin_percent": 0.0,  # ignore contacts starting in this % of each side; 0 disables
++        "while_selecting": False,  # hold left-click and slide a second finger vertically
+     },
+     "buttons": {
+         "middle": "left",  # a click in the centre zone: "left" (macOS has no middle click), "middle", or "right"
+@@ -380,6 +382,22 @@ def query_battery(hidraw: str) -> tuple[int, bool] | None:
+     return parse_battery_report(bytes(buf))
+ 
+ 
++class BatteryPoll:
++    """A slow Bluetooth HID query must never hold up mouse input."""
++    def __init__(self, hidraw: str) -> None:
++        self.result: tuple[int, bool] | None = None
++        self.done = threading.Event()
++        threading.Thread(target=self._query, args=(hidraw,), daemon=True).start()
++
++    def _query(self, hidraw: str) -> None:
++        try:
++            self.result = query_battery(hidraw)
++        except Exception as exc:
++            log(f"battery: {exc}")
++        finally:
++            self.done.set()
++
++
+ def write_status(data: dict) -> None:
+     try:
+         write_own_file(STATUS_FILE, json.dumps(data).encode("utf-8"))
+@@ -442,6 +460,7 @@ class Engine:
+         self.f_dx = 0
+         self.f_dy = 0
+         self.f_btn: list[tuple[int, int]] = []
++        self.buttons_down: set[int] = set()  # physical codes, before remapping
+         # pointer
+         self.v = 0.0
+         self.last_motion_t = -1.0
+@@ -453,10 +472,15 @@ class Engine:
+         # touch
+         self.slots: dict[int, list] = {}  # slot -> [tracking_id, x, y]
+         self.cur_slot = 0
++        self.touch_x_range: tuple[int, int] | None = None
++        self.edge_contacts: dict[int, bool] = {}  # slot -> rejected at initial contact
++        self.contact_origins: dict[int, tuple[int, int]] = {}
+         self.primary: int | None = None
+         self.t_ref: tuple[int, int] | None = None
+         self.scrolling = False
+         self.axis = "y"
++        self.axis_motion = [0.0, 0.0]
++        self.axis_motion_t = -1.0
+         self.s_rem = 0.0
+         self.s_notch = 0
+         self.s_vel = 0.0
+@@ -481,11 +505,16 @@ class Engine:
+     # ---- device attach
+     def attach(self, dev: InputDevice) -> None:
+         self.reset_touch()
++        x_axis = dev.absinfo(e.ABS_MT_POSITION_X)
++        self.touch_x_range = (x_axis.min, x_axis.max) if x_axis else None
+         self.v = 0.0
+         self.last_motion_t = -1.0
+ 
+     def reset_touch(self) -> None:
++        self.buttons_down.clear()
+         self.slots.clear()
++        self.edge_contacts.clear()
++        self.contact_origins.clear()
+         self.cur_slot = 0
+         self.primary = None
+         self.t_ref = None
+@@ -495,12 +524,33 @@ class Engine:
+         self.stop_coast("reset")
+ 
+     def update_config(self, cfg: dict) -> None:
++        if cfg["scroll"]["edge_margin_percent"] != self.cfg["scroll"]["edge_margin_percent"]:
++            self.edge_contacts.clear()
+         self.cfg = cfg
+         self.curve = AppleCurve(float(cfg["pointer"]["tracking_speed"]))
+ 
+     # ---- helpers
+     def fingers(self) -> list[int]:
+-        return sorted(s for s, v in self.slots.items() if v[0] >= 0)
++        active = sorted(s for s, v in self.slots.items() if v[0] >= 0)
++        percent = max(0.0, min(float(self.cfg["scroll"]["edge_margin_percent"]), 45.0))
++        if percent == 0.0 or self.touch_x_range is None:
++            return active
++
++        left, right = self.touch_x_range
++        margin = (right - left) * percent / 100.0
++        accepted = []
++        for slot in active:
++            if slot not in self.edge_contacts:
++                # Classify on the complete frame, after both position updates.
++                # Keep this decision until lift: a resting side contact stays
++                # ignored, and an intentional swipe can travel toward the edge.
++                x = self.slots[slot][1]
++                self.edge_contacts[slot] = x < left + margin or x > right - margin
++                if self.edge_contacts[slot] and self.verbose:
++                    log(f"ignored side contact slot={slot}")
++            if not self.edge_contacts[slot]:
++                accepted.append(slot)
++        return accepted
+ 
+     def pointer_gain(self, v: float) -> float:
+         """Pixels per raw count at smoothed speed v (raw counts/ms), macOS style."""
+@@ -554,6 +604,11 @@ class Engine:
+                 slot = self.slots.setdefault(self.cur_slot, [-1, 0, 0])
+                 if ev.code == e.ABS_MT_TRACKING_ID:
+                     slot[0] = ev.value
++                    self.edge_contacts.pop(self.cur_slot, None)
++                    self.contact_origins.pop(self.cur_slot, None)
++                    if self.primary == self.cur_slot:
++                        self.primary = None
++                        self.t_ref = None
+                 elif ev.code == e.ABS_MT_POSITION_X:
+                     slot[1] = ev.value
+                 elif ev.code == e.ABS_MT_POSITION_Y:
+@@ -567,24 +622,77 @@ class Engine:
+         self.f_btn = []
+ 
+         # buttons first, so motion in the press frame is covered by click tolerance
+-        clicked = False
+         for code, value in btns:
+-            code = self.map_button(code)
+             if value == 1:
+-                clicked = True
+-                self.stop_coast("button")
++                self.buttons_down.add(code)
+                 self.hold_until = ts + float(self.cfg["pointer"]["click_hold_ms"]) / 1000.0
+                 self.hold_acc = [0.0, 0.0]
+-            self.ui.write(e.EV_KEY, code, value)
++            elif value == 0:
++                self.buttons_down.discard(code)
++            self.ui.write(e.EV_KEY, self.map_button(code), value)
+ 
+         if dx or dy:
+             self.pointer(ts, dx, dy)
+ 
+-        self.touch(ts)
+-        if clicked:
+-            self.session_clicked = True  # after touch(), so a same-frame landing can't reset it
++        if btns:
++            self.suppress_touch(ts)
++        elif self.buttons_down:
++            if (self.cfg["scroll"]["while_selecting"]
++                    and {self.map_button(code) for code in self.buttons_down} == {e.BTN_LEFT}):
++                self.selection_touch(ts)
++            else:
++                self.suppress_touch(ts)
++        else:
++            self.touch(ts)
+         self.ui.syn()
+ 
++    def selection_touch(self, ts: float) -> None:
++        """Scroll vertically with a second finger without releasing a selection.
++
++        Ordinary one-finger dragging still suppresses touch movement. Button
++        transitions reset the stroke, and this path never runs gestures or
++        starts momentum, so a selection cannot trigger browser navigation.
++        """
++        active = self.fingers()
++        if len(active) < 2 or self.pointer_moving(ts):
++            self.suppress_touch(ts)
++            return
++        self.stop_coast("selection")
++        self.session_clicked = True
++        self.last_tap_t = -1.0
++        self.contact_origins = {
++            slot: self.contact_origins.get(slot, tuple(self.slots[slot][1:3]))
++            for slot in active
++        }
++        if self.scrolling and self.primary in active:
++            primary = self.primary
++        else:
++            primary = max(active, key=lambda slot: abs(
++                self.slots[slot][2] - self.contact_origins[slot][1]
++            ))
++        self.one_finger(ts, primary, vertical_only=True)
++
++    def suppress_touch(self, ts: float) -> None:
++        """Cancel gestures through the release frame; keep contacts for a fresh start."""
++        active = self.fingers()  # classify side contacts even while dragging
++        self.contact_origins = {slot: tuple(self.slots[slot][1:3]) for slot in active}
++        self.stop_coast("button")
++        self.scrolling = False
++        self.primary = None
++        self.t_ref = None
++        self.two_ref = None
++        self.s_rem = 0.0
++        self.s_notch = 0
++        self.s_vel = 0.0
++        self.session_open = bool(active)
++        self.session_t0 = ts
++        self.session_travel = 0.0
++        self.session_clicked = True  # lifting after a click is not a touch tap
++        self.max_fingers = len(active)
++        self.gesture_fired = False
++        self.last_tap_t = -1.0
++        self.last_tap_fingers = 0
++
+     def pointer(self, ts: float, dx: int, dy: int) -> None:
+         p = self.cfg["pointer"]
+         dt = ts - self.last_motion_t if self.last_motion_t >= 0 else NOMINAL_DT
+@@ -643,6 +751,10 @@ class Engine:
+ 
+     def touch(self, ts: float) -> None:
+         active = self.fingers()
++        self.contact_origins = {
++            slot: self.contact_origins.get(slot, tuple(self.slots[slot][1:3]))
++            for slot in active
++        }
+         n = len(active)
+         if n == 0:
+             if self.session_open:
+@@ -659,10 +771,23 @@ class Engine:
+             self.primary = None
+             self.stop_coast("touch")
+         self.max_fingers = max(self.max_fingers, n)
+-        if n >= 2:
++        g = self.cfg["gestures"]
++        multi_gestures = any(g[key] for key in (
++            "two_finger_swipe_left", "two_finger_swipe_right", "two_finger_double_tap"
++        ))
++        if n >= 2 and multi_gestures:
+             self.two_fingers(ts, active)
+         else:
+-            self.one_finger(ts, active[0])
++            # With two-finger gestures disabled, another resting finger must not
++            # cancel scrolling. Keep the moving finger once scrolling starts.
++            if self.scrolling and self.primary in active:
++                primary = self.primary
++            else:
++                primary = max(active, key=lambda slot: math.hypot(
++                    self.slots[slot][1] - self.contact_origins[slot][0],
++                    self.slots[slot][2] - self.contact_origins[slot][1],
++                ))
++            self.one_finger(ts, primary)
+ 
+     def two_fingers(self, ts: float, active: list[int]) -> None:
+         g = self.cfg["gestures"]
+@@ -687,7 +812,7 @@ class Engine:
+                 log("two-finger swipe " + ("left" if dx_mm < 0 else "right"))
+             run_action(str(action))
+ 
+-    def one_finger(self, ts: float, primary: int) -> None:
++    def one_finger(self, ts: float, primary: int, vertical_only: bool = False) -> None:
+         s = self.cfg["scroll"]
+         _, x, y = self.slots[primary]
+         if primary != self.primary or self.t_ref is None:
+@@ -697,18 +822,25 @@ class Engine:
+             self.scrolling = False
+             self.s_vel = 0.0
+             self.s_last_t = ts
++            self.axis_motion = [0.0, 0.0]
++            self.axis_motion_t = ts
+             return
+ 
+         rx, ry = self.t_ref
+         dx_mm = (x - rx) / self.res_x
+         dy_mm = (y - ry) / self.res_y
++        if vertical_only:
++            dx_mm = 0.0
+         self.session_travel += math.hypot(dx_mm, dy_mm)
+ 
+         if not self.scrolling:
+             if self.pointer_moving(ts):
+                 self.t_ref = (x, y)  # resting finger while mousing: never a scroll
++                self.s_last_t = ts
+                 return
+-            if math.hypot(dx_mm, dy_mm) < float(s["start_mm"]):
++            travel = math.hypot(dx_mm, dy_mm)
++            threshold = max(0.0, float(s["start_mm"]))
++            if travel == 0 or travel < threshold:
+                 return
+             self.axis = "x" if abs(dx_mm) > HORIZONTAL_RATIO * abs(dy_mm) else "y"
+             if self.axis == "x" and not s["horizontal"]:
+@@ -717,15 +849,47 @@ class Engine:
+             self.scrolling = True
+             self.scroll_t0 = ts
+             self.s_travel = 0.0
+-            self.t_ref = (x, y)  # the start travel is swallowed, like macOS
++            self.axis_motion = [0.0, 0.0]
++            self.axis_motion_t = self.s_last_t
++            # Discard only the dead zone, not this entire input report. Otherwise
++            # short swipes disappear and Bluetooth report sizes change the speed.
++            remaining = (travel - threshold) / travel
++            dx_mm *= remaining
++            dy_mm *= remaining
+             self.s_vel = 0.0
+-            self.s_last_t = ts
+             if self.verbose:
+                 log(f"scroll start axis={self.axis}")
+-            return
+ 
+         # scrolling
+         self.t_ref = (x, y)
++        # A tiny sideways movement at touchdown must not discard the vertical
++        # part of the entire stroke. Accumulate direction evidence until either
++        # the current axis advances or the other axis clearly takes over.
++        self.axis_motion[0] += dx_mm
++        self.axis_motion[1] += dy_mm
++        main = 0 if self.axis == "x" else 1
++        cross = 1 - main
++        threshold = max(float(s["start_mm"]), 1.0 / max(self.res_x, self.res_y))
++        can_switch = self.axis == "x" or s["horizontal"]
++        if (can_switch and abs(self.axis_motion[cross]) >= threshold
++                and abs(self.axis_motion[cross]) > HORIZONTAL_RATIO * abs(self.axis_motion[main])):
++            self.axis = "y" if self.axis == "x" else "x"
++            # Emit the accumulated, previously ignored cross-axis travel once.
++            # Old-axis velocity and partial wheel notches must not leak across.
++            dx_mm, dy_mm = self.axis_motion
++            self.s_rem = 0.0
++            self.s_notch = 0
++            self.s_vel = 0.0
++            self.s_travel = 0.0
++            self.s_last_t = self.axis_motion_t
++            self.scroll_t0 = self.axis_motion_t
++            self.axis_motion = [0.0, 0.0]
++            self.axis_motion_t = ts
++            if self.verbose:
++                log(f"scroll direction corrected axis={self.axis}")
++        elif abs(self.axis_motion[main]) >= threshold:
++            self.axis_motion = [0.0, 0.0]
++            self.axis_motion_t = ts
+         d_mm = dy_mm if self.axis == "y" else dx_mm
+         if d_mm == 0.0:
+             return
+@@ -824,18 +988,23 @@ def run_session(dev: InputDevice, ui: UInput, eng: Engine, cfg_path: str) -> Non
+     next_cfg_check = time.monotonic() + 1.0
+     hidraw = hidraw_for(dev)
+     next_battery = 0.0
++    battery_poll: BatteryPoll | None = None
+     write_status({"connected": True, "model": dev.name, "ts": time.time()})
+     try:
+         while True:
+             now = time.monotonic()
+-            if eng.cfg["battery"]["enabled"] and now >= next_battery:
+-                next_battery = now + max(float(eng.cfg["battery"]["poll_minutes"]), 1.0) * 60.0
+-                got = query_battery(hidraw) if hidraw else None
+-                if got:
++            if battery_poll is not None and battery_poll.done.is_set():
++                got = battery_poll.result
++                battery_poll = None
++                if got and eng.cfg["battery"]["enabled"]:
+                     percent, charging = got
+                     write_status({"connected": True, "model": dev.name, "percent": percent,
+                                   "charging": charging, "ts": time.time()})
+                     log(f"battery {percent}%" + (" charging" if charging else ""))
++            if eng.cfg["battery"]["enabled"] and now >= next_battery:
++                next_battery = now + max(float(eng.cfg["battery"]["poll_minutes"]), 1.0) * 60.0
++                if hidraw is not None and battery_poll is None:
++                    battery_poll = BatteryPoll(hidraw)
+                 elif hidraw is None:
+                     log("battery: no hidraw node found for the mouse")
+             timeout = TICK if eng.coasting else 0.25
+diff --git a/install.sh b/install.sh
+index eb1a5a5..18523a9 100755
+--- a/install.sh
++++ b/install.sh
+@@ -55,10 +55,12 @@ UDEV = b"""# omarchy-magic-mouse: grant the logged-in user access to the Magic M
+ # changes, no world-readable nodes; only these device IDs.
+ KERNEL=="uinput", SUBSYSTEM=="misc", OPTIONS+="static_node=uinput", TAG+="uaccess"
+ SUBSYSTEM=="input", KERNEL=="event*", ATTRS{id/vendor}=="004c", ATTRS{id/product}=="0269", TAG+="uaccess"
++SUBSYSTEM=="input", KERNEL=="event*", ATTRS{id/vendor}=="004c", ATTRS{id/product}=="0323", TAG+="uaccess"
+ SUBSYSTEM=="input", KERNEL=="event*", ATTRS{id/vendor}=="004c", ATTRS{id/product}=="030d", TAG+="uaccess"
+ SUBSYSTEM=="input", KERNEL=="event*", ATTRS{id/vendor}=="05ac", ATTRS{id/product}=="030d", TAG+="uaccess"
+ # Raw HID node too, so the daemon can ask the mouse for its battery level.
+ SUBSYSTEM=="hidraw", KERNELS=="0005:004C:0269.*", TAG+="uaccess"
++SUBSYSTEM=="hidraw", KERNELS=="0005:004C:0323.*", TAG+="uaccess"
+ SUBSYSTEM=="hidraw", KERNELS=="0005:05AC:030D.*", TAG+="uaccess"
+ """
+ MODPROBE = b"""# omarchy-magic-mouse: let the mouse's own firmware decide left vs right click
+@@ -171,6 +173,7 @@ except FileNotFoundError:
+ subprocess.run(["/usr/bin/udevadm", "control", "--reload"], check=True)
+ subprocess.run(["/usr/bin/udevadm", "trigger", "--subsystem-match=misc", "--subsystem-match=input",
+                 "--subsystem-match=hidraw", "--action=add"], check=False)
++subprocess.run(["/usr/bin/udevadm", "settle", "--timeout=20"], check=True)
+ print(" ".join(digests))
+ PY
+ )
+@@ -189,7 +192,7 @@ for dev in /sys/class/input/event*; do
+   [ -e "$dev/device/id/vendor" ] || continue
+   vid=$(<"$dev/device/id/vendor"); pid=$(<"$dev/device/id/product")
+   case "$vid:$pid" in
+-    004c:0269|004c:030d|05ac:030d)
++    004c:0269|004c:0323|004c:030d|05ac:030d)
+       node="/dev/input/${dev##*/}"
+       [ -r "$node" ] || die "your user cannot read $node (the Magic Mouse) after installing the udev rule. $acl_help"
+       ;;
+--- a/Panel.qml
++++ b/Panel.qml
+@@ -47,7 +47,9 @@
+     return false
+   }
+   function setCenterHoverRevealSuppressed(value) {
+-    if (root.bar && "centerHoverRevealSuppressed" in root.bar)
++    if (root.bar && typeof root.bar.setCenterHoverRevealSuppressed === "function")
++      root.bar.setCenterHoverRevealSuppressed(value)
++    else if (root.bar && "centerHoverRevealSuppressed" in root.bar)
+       root.bar.centerHoverRevealSuppressed = value
+   }
+ 

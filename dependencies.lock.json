@@ -1,0 +1,157 @@
+{
+  "schema": 1,
+  "baseline": {
+    "omarchy": "4.0.4-1",
+    "hyprland": "0.56.2-2",
+    "quickshell": "0.3.1-1"
+  },
+  "modules": {
+    "magic-mouse": {
+      "id": "io.github.maikunari.magic-mouse",
+      "url": "https://github.com/maikunari/omarchy-magic-mouse",
+      "commit": "a4e5d4df63d8bbb6b74be3b5cd9da19f497e83b5",
+      "version": "1.1.3",
+      "license": "MIT",
+      "packages": [
+        "python-evdev"
+      ],
+      "setup": [
+        "bash",
+        "install.sh"
+      ],
+      "patches": [
+        {
+          "path": "patches/magic-mouse-functional.patch",
+          "sha256": "5b6cd4ac5e7ff5d3fe01a2b7305b43b15bcd614cab80fc3fb2340d7facfe9ccc",
+          "kind": "functional"
+        },
+        {
+          "path": "patches/magic-mouse-shadows.patch",
+          "sha256": "9d9fa6c414fab8e044d417a299c34754460bfbee957da3f493835be711c626d1",
+          "kind": "shadows"
+        }
+      ]
+    },
+    "airpods": {
+      "id": "io.github.thisisgm.omapods",
+      "url": "https://github.com/thisisgm/omarchy-pods",
+      "commit": "fff7fec600a5b9a61cdb40e93eccbcceb4b8f824",
+      "version": "1.3.6",
+      "license": "MIT (widget); GPL-3.0-only (daemon); upstream Apple artwork exclusions",
+      "packages": [
+        "cmake",
+        "ninja",
+        "qt6-connectivity",
+        "qt6-tools",
+        "qt6-declarative",
+        "pkgconf",
+        "libpulse",
+        "openssl"
+      ],
+      "setup": [
+        "bash",
+        "setup"
+      ],
+      "patches": [
+        {
+          "path": "patches/airpods-shadows.patch",
+          "sha256": "032926634904015c4eb692a2013bacdafa3c6a4e863d6614887a21dfb5bd6819",
+          "kind": "shadows"
+        }
+      ]
+    },
+    "airplay": {
+      "id": "io.github.etroll.omarchy-airplay",
+      "url": "https://github.com/ETroll/omarchy-airplay",
+      "commit": "77f79678e881caeb9963dab13d1b1bead4038c92",
+      "version": "0.2.0",
+      "license": "MIT",
+      "packages": [
+        "avahi",
+        "jq",
+        "gstreamer",
+        "gst-plugins-base",
+        "gst-plugins-good",
+        "gst-plugins-bad",
+        "gst-plugins-ugly",
+        "gst-libav",
+        "pipewire",
+        "xdg-desktop-portal-hyprland"
+      ],
+      "setup": [],
+      "patches": [
+        {
+          "path": "patches/airplay-functional.patch",
+          "sha256": "ac977496f0e9bd8df2c9ff88c7a16f9f1bf5151fcbb620d0b8497221dbc56a91",
+          "kind": "functional"
+        }
+      ]
+    },
+    "magic-devices": {
+      "id": "ben.omagic",
+      "url": "https://github.com/betnbd/Omagic",
+      "commit": "2c1aeaab6654f3d3f04a0891cbadfec8eae70d9f",
+      "version": "1.0.0",
+      "license": "MIT",
+      "packages": [
+        "python",
+        "bluez",
+        "bluez-utils"
+      ],
+      "setup": [
+        "bash",
+        "install.sh"
+      ],
+      "patches": []
+    },
+    "calendar": {
+      "id": "crmne.omacal",
+      "url": "https://github.com/crmne/omacal",
+      "commit": "af7dae2528702d3cdf2ff28262a587833b0294ad",
+      "version": "1.0.2",
+      "license": "MIT",
+      "packages": [
+        "hey-cli",
+        "jq"
+      ],
+      "setup": [],
+      "patches": []
+    },
+    "messages": {
+      "id": "nixfred.blip",
+      "url": "https://github.com/nixfred/blip",
+      "commit": "5bfb1c93de8eae70b8b96d495cb4a0101a42d3aa",
+      "version": "2.6.2",
+      "license": "MIT",
+      "packages": [
+        "bun",
+        "jq",
+        "openssh",
+        "wl-clipboard",
+        "libnotify",
+        "xdg-utils"
+      ],
+      "setup": [
+        "bash",
+        "scripts/blip-setup"
+      ],
+      "patches": []
+    },
+    "activity-monitor": {
+      "id": "stappmus.activity-monitor",
+      "url": "https://github.com/stappmus/omarchy-activity-monitor",
+      "commit": "b25a98c7ff2a688ab74d86d2be42249e2db2f9cf",
+      "version": "2.1.1",
+      "license": "MIT",
+      "packages": [],
+      "setup": [],
+      "patches": [
+        {
+          "path": "patches/activity-monitor-shadows.patch",
+          "sha256": "77e7f8454ba0228c1a9129f4151986aa1054dcd3b7e789f01b809dcfb5c13ba1",
+          "kind": "shadows"
+        }
+      ]
+    }
+  }
+}

@@ -1,0 +1,18 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="3840" height="2400" viewBox="0 0 1920 1200">
+  <defs>
+    <linearGradient id="sky" x2="0.85" y2="1"><stop stop-color="#c7d6ef"/><stop offset=".48" stop-color="#e4e9f3"/><stop offset="1" stop-color="#fae9e6"/></linearGradient>
+    <linearGradient id="far" x1=".1" y1=".1" x2=".9" y2="1"><stop stop-color="#a7c5ef"/><stop offset=".48" stop-color="#82a4dc"/><stop offset="1" stop-color="#c7cce9"/></linearGradient>
+    <linearGradient id="mid" x1="0" y1="0" x2=".9" y2="1"><stop stop-color="#bdddf4"/><stop offset=".4" stop-color="#4c8aca"/><stop offset="1" stop-color="#24559a"/></linearGradient>
+    <linearGradient id="near" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#c9e7ee"/><stop offset=".36" stop-color="#71afc8"/><stop offset="1" stop-color="#367899"/></linearGradient>
+    <linearGradient id="edge" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#f5f4ef"/><stop offset="1" stop-color="#8fc1d1"/></linearGradient>
+    <radialGradient id="glow"><stop stop-color="#ffffff" stop-opacity=".65"/><stop offset="1" stop-color="#ffffff" stop-opacity="0"/></radialGradient>
+  </defs>
+  <path fill="url(#sky)" d="M0 0H1920V1200H0Z"/>
+  <ellipse fill="url(#glow)" cx="1340" cy="210" rx="780" ry="570"/>
+  <path fill="url(#far)" d="M-100 1070C390 1120 510 460 1040 410S1520 800 2020 150V1300H-100Z"/>
+  <path fill="none" stroke="#ffffff" stroke-opacity=".27" stroke-width="2" d="M-100 1070C390 1120 510 460 1040 410S1520 800 2020 150"/>
+  <path fill="url(#mid)" d="M-100 570C290 410 425 1000 980 870S1570 560 2020 790V1300H-100Z"/>
+  <path fill="none" stroke="#ffffff" stroke-opacity=".4" stroke-width="2" d="M-100 570C290 410 425 1000 980 870S1570 560 2020 790"/>
+  <path fill="url(#near)" d="M-100 810C330 650 530 1170 1130 1020S1740 730 2020 960V1300H-100Z"/>
+  <path fill="url(#edge)" d="M-100 1100C370 930 740 1400 1380 1160S1810 1050 2020 1150V1300H-100Z"/>
+</svg>

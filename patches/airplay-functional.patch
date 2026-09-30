@@ -1,0 +1,13 @@
+diff --git a/BarWidget.qml b/BarWidget.qml
+index f34b98e..3cdbfa5 100644
+--- a/BarWidget.qml
++++ b/BarWidget.qml
+@@ -216,7 +216,7 @@ BarWidget {
+     command.push("-port-range", portRange, "-video-codec", codec, "-hwaccel", encoder, "-fps", String(fps), "-target-latency-ms", String(latency))
+     if (!root.boolSetting("audio", false)) command.push("-no-audio")
+     if (pairCode !== "") command.push("-pair", "-code", pairCode)
+-    return [root.runnerPath, "--timeout", "120", "--"].concat(command)
++    return [root.runnerPath, "--timeout", "0", "--"].concat(command)
+   }
+ 
+   function launchStream(pairCode) {

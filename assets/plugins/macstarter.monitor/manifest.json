@@ -1,0 +1,23 @@
+{
+  "schemaVersion": 1,
+  "id": "macstarter.monitor",
+  "name": "Mac Starter Monitor",
+  "version": "1.0.0",
+  "author": "Omarchy",
+  "description": "Brightness slider and laptop display controls",
+  "kinds": [
+    "bar-widget"
+  ],
+  "entryPoints": {
+    "barWidget": "Panel.qml"
+  },
+  "barWidget": {
+    "displayName": "Mac Starter Monitor",
+    "description": "Brightness slider and laptop display controls",
+    "category": "System",
+    "allowMultiple": false
+  },
+  "omarchy": {
+    "clonedFrom": "omarchy.monitor"
+  }
+}

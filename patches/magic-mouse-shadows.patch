@@ -1,0 +1,17 @@
+--- a/Panel.qml
++++ b/Panel.qml
+@@ -1,4 +1,5 @@
+ import QtQuick
++import "../../ui/panel-shadows" as ShadowPanels
+ import Quickshell
+ import Quickshell.Io
+ import qs.Commons
+@@ -184,7 +185,7 @@
+     }
+   }
+ 
+-  KeyboardPanel {
++  ShadowPanels.KeyboardPanel {
+     id: panel
+     anchorItem: root.anchorItem
+     owner: root.barIdentity

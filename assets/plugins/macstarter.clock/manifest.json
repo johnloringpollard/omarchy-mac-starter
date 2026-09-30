@@ -1,0 +1,23 @@
+{
+  "schemaVersion": 1,
+  "id": "macstarter.clock",
+  "name": "Mac Starter Clock",
+  "version": "1.0.0",
+  "author": "Omarchy",
+  "description": "Date/time label with a calendar popup",
+  "kinds": [
+    "bar-widget"
+  ],
+  "entryPoints": {
+    "barWidget": "BarWidget.qml"
+  },
+  "barWidget": {
+    "displayName": "Mac Starter Clock",
+    "description": "Date/time label with a calendar popup",
+    "category": "Time",
+    "allowMultiple": false
+  },
+  "omarchy": {
+    "clonedFrom": "omarchy.clock"
+  }
+}

@@ -1,0 +1,23 @@
+{
+  "schemaVersion": 1,
+  "id": "macstarter.bluetooth",
+  "name": "Mac Starter Bluetooth",
+  "version": "1.0.0",
+  "author": "Omarchy",
+  "description": "Bluetooth device list with connect/disconnect",
+  "kinds": [
+    "bar-widget"
+  ],
+  "entryPoints": {
+    "barWidget": "Panel.qml"
+  },
+  "barWidget": {
+    "displayName": "Mac Starter Bluetooth",
+    "description": "Bluetooth device list with connect/disconnect",
+    "category": "Network",
+    "allowMultiple": false
+  },
+  "omarchy": {
+    "clonedFrom": "omarchy.bluetooth"
+  }
+}

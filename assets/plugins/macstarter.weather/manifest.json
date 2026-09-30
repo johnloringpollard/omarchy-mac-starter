@@ -1,0 +1,24 @@
+{
+  "schemaVersion": 1,
+  "id": "macstarter.weather",
+  "name": "Mac Starter Weather",
+  "version": "1.0.0",
+  "author": "Omarchy",
+  "description": "Weather pill with detail popup",
+  "kinds": [
+    "bar-widget"
+  ],
+  "entryPoints": {
+    "barWidget": "BarWidget.qml"
+  },
+  "barWidget": {
+    "displayName": "Mac Starter Weather",
+    "description": "Weather pill with detail popup",
+    "category": "Info",
+    "allowMultiple": false,
+    "settingsForm": "weatherSettings"
+  },
+  "omarchy": {
+    "clonedFrom": "omarchy.weather"
+  }
+}

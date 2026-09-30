@@ -1,0 +1,47 @@
+# Optional tuning preset for the patched Magic Mouse daemon.
+
+[pointer]
+tracking_speed = 3
+cpi = 1300
+speed = 1.0
+smoothing_ms = 30
+click_hold_ms = 80
+click_drag_units = 12
+
+[scroll]
+while_selecting = true
+edge_margin_percent = 15
+natural = true
+invert_y = false
+invert_x = false
+speed = 1
+start_mm = 3
+settle_ms = 20
+settle_counts = 20
+accel = 0.0
+horizontal = true
+
+[buttons]
+middle = "left"
+
+[gestures]
+swipe_pages = true
+swipe_mm = 6.0
+two_finger_swipe_left = "dispatch hl.dsp.focus({ workspace = \"e+1\" })"
+two_finger_swipe_right = "dispatch hl.dsp.focus({ workspace = \"e-1\" })"
+two_finger_double_tap = ""
+double_tap = ""
+
+[bar]
+show_percent = false
+
+[battery]
+enabled = true
+poll_minutes = 15
+
+[momentum]
+enabled = true
+flick = 900
+decay = 0.99
+stop = 60
+max_seconds = 2.5

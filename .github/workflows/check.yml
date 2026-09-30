@@ -1,0 +1,25 @@
+name: Check starter
+on:
+  push:
+  pull_request:
+permissions:
+  contents: read
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Check exported files
+        run: python scripts/check_export.py
+      - name: Test isolated install and restore
+        run: python -m unittest discover -s tests -v
+      - name: Parse authored Lua
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes lua5.4
+          luac -p modules/desktop.lua
+          luac -p modules/shortcuts.lua
+          luac -p assets/theme/hyprland.lua

@@ -1,0 +1,23 @@
+{
+  "schemaVersion": 1,
+  "id": "macstarter.power",
+  "name": "Mac Starter Power",
+  "version": "1.0.0",
+  "author": "Omarchy",
+  "description": "Battery, power profile, and system stats",
+  "kinds": [
+    "bar-widget"
+  ],
+  "entryPoints": {
+    "barWidget": "Panel.qml"
+  },
+  "barWidget": {
+    "displayName": "Mac Starter Power",
+    "description": "Battery, power profile, and system stats",
+    "category": "System",
+    "allowMultiple": false
+  },
+  "omarchy": {
+    "clonedFrom": "omarchy.power"
+  }
+}

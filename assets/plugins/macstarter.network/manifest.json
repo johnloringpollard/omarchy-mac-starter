@@ -1,0 +1,23 @@
+{
+  "schemaVersion": 1,
+  "id": "macstarter.network",
+  "name": "Mac Starter Network",
+  "version": "1.0.0",
+  "author": "Omarchy",
+  "description": "Wi-Fi list and connection state",
+  "kinds": [
+    "bar-widget"
+  ],
+  "entryPoints": {
+    "barWidget": "Panel.qml"
+  },
+  "barWidget": {
+    "displayName": "Mac Starter Network",
+    "description": "Wi-Fi list and connection state",
+    "category": "Network",
+    "allowMultiple": false
+  },
+  "omarchy": {
+    "clonedFrom": "omarchy.network"
+  }
+}
