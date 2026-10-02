@@ -30,6 +30,23 @@ Then configure your plugins however you like. Pair devices, connect accounts, an
 
 Already-installed plugins are left alone. Existing custom widgets are preserved, and the installer reuses your clock. Run `./setup` again to add more plugins.
 
+## Experimental macOS application support
+
+[VibeDarling](https://github.com/VibeDarling/darling) is a development fork of
+Darling working toward running macOS applications on Linux. Its contributors
+report roughly **9–10 stock macOS apps running**, including **TextEdit, Stickies,
+and Terminal**, plus **iTerm2**. **iMessage compatibility is a target, not a
+working feature.** The Messages plugin above continues to use Blip and a Mac.
+
+VibeDarling is rough and experimental, but its contributors believe the progress
+shows promise toward supporting potentially most macOS programs over time. That
+is a long-term ambition, not a compatibility guarantee. **More contributors are
+welcome**, especially for app testing, compatibility fixes, and packaging.
+
+See the [VibeDarling integration guide](docs/vibedarling.md) to explore it and
+contribute. Setup is manual and separate from `./setup`; the starter does not yet
+install or manage the runtime.
+
 ## Preview or automate
 
 ```bash
