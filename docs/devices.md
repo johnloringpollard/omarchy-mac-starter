@@ -14,6 +14,14 @@ Run `./setup` to install the plugins you want. After installation, use their pan
 
 AirPlay sends the Linux desktop to a compatible receiver; it does not receive an iPhone screen. OMagic does not provide Touch ID. AirPods use the plugin's matching daemon, not an arbitrary LibrePods build.
 
+## Experimental iMessage compatibility work
+
+[VibeDarling](vibedarling.md) is exploring macOS application compatibility on
+Linux, with iMessage among its targets. Working iMessage support has not been
+established. To use the starter's Messages plugin today, follow the Blip setup
+above with a reachable Mac signed into Messages. Contributors interested in the
+longer-term compatibility work can join VibeDarling.
+
 ## Advanced installation
 
 `./setup` is the normal installation path. The lower-level tool supports individual source installs and explicit inspection:
