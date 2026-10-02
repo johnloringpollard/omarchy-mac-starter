@@ -1,0 +1,6 @@
+[Unit]
+Description=Apply the Mac starter theme for the local time
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/python3 "%h/.local/bin/mac-starter-appearance" check

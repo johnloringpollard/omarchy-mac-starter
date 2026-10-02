@@ -1,8 +1,10 @@
 # Mac starter for Omarchy
 
-Give Omarchy a familiar feel with Mac-style shortcuts, rounded windows, frosted panels, a transparent top bar, and the day and time on the right. Add the Apple-device plugins you want during installation.
+Give Omarchy a familiar feel with Mac-style shortcuts, rounded windows, frosted panels, a transparent top bar, and the day and time on the right. Includes matching light and dark themes with automatic switching by local time. Add the Apple-device plugins you want during installation.
 
-![Illustration of the desktop preset](docs/preview.svg)
+![Illustration of the dark palette](docs/apple-dark-preview.png)
+
+![Illustration of the light palette](docs/apple-preview.png)
 
 *Preset illustration. This project is independent of Apple and Omarchy.*
 
@@ -29,6 +31,18 @@ Choose any optional plugins, then confirm installation. The installer applies th
 Then configure your plugins however you like. Pair devices, connect accounts, and change preferences through their panels or [upstream setup guides](docs/devices.md). The starter handles installation; it does not configure your accounts, pair devices, or set up an iMessage bridge for you.
 
 Already-installed plugins are left alone. Existing custom widgets are preserved, and the installer reuses your clock. Run `./setup` again to add more plugins.
+
+## Choose your appearance
+
+Open your app launcher and search **Mac Starter Appearance**. Choose **Always light**, **Always dark**, or **Automatic**. Fixed choices survive restarts. Automatic uses light from 7 AM to 7 PM and dark overnight in your computer's timezone, including daylight saving changes. No location access is needed.
+
+To change the schedule:
+
+```bash
+python3 ~/.local/bin/mac-starter-appearance schedule 08:00 20:00
+```
+
+Select Automatic in the chooser to use those times. The theme pair uses separate names and settings from the standalone Mac Style package. Existing starter users should follow the [upgrade steps](docs/migration.md#upgrade-an-existing-starter-installation) to receive the new assets and chooser.
 
 ## Preview or automate
 

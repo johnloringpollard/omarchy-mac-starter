@@ -7,6 +7,7 @@ import io
 import json
 from pathlib import Path
 import shutil
+import subprocess
 import tempfile
 import tomllib
 import unittest
@@ -53,6 +54,11 @@ class RecoveryTest(unittest.TestCase):
             self.write(self.assets / 'modules' / (module + '.lua'), '-- fixture ' + module + '\n')
         for name, value in {
             'theme/colors.toml': 'mode = "light"\n',
+            'theme-dark/colors.toml': 'mode = "dark"\n',
+            'appearance/mac-starter-appearance': 'print("fixture")\n',
+            'appearance/mac-starter-appearance.service': '[Service]\n',
+            'appearance/mac-starter-appearance.timer': '[Timer]\n',
+            'appearance/mac-starter-appearance.desktop': '[Desktop Entry]\n',
             'fonts/Inter.ttc': 'fixture font bytes',
             'apple-ui.conf': '<fontconfig/>\n',
             'panel-shadows/PanelShadow.qml': 'Item {}\n',
@@ -196,6 +202,72 @@ class RecoveryTest(unittest.TestCase):
                     self.assertEqual(owned, [])
                     self.invoke('uninstall')
                     self.assertEqual(self.shell(), expected)
+
+    def test_inflight_theme_change_blocks_uninstall_after_jobs_stop(self):
+        self.invoke('install')
+        def command(command, capture=False):
+            if command[2] == 'disable':
+                self.write(self.home / '.local/state/omarchy/current/theme.name', 'mac-starter-dark')
+            return ''
+        with patch.object(starter.Path, 'home', return_value=self.home), patch.object(starter, 'timer_command', side_effect=command):
+            with self.assertRaisesRegex(starter.Conflict, 'Appearance changed'):
+                self.invoke('uninstall')
+        self.assertTrue((self.home / starter.APPEARANCE).exists())
+        self.assertTrue((self.home / '.config/omarchy/themes/mac-starter-dark/colors.toml').exists())
+
+    def test_missing_timer_file_still_stops_loaded_jobs(self):
+        self.invoke('install')
+        (self.home / '.config/systemd/user' / starter.TIMER).unlink()
+        with patch.object(starter.Path, 'home', return_value=self.home), patch.object(starter, 'timer_command', return_value='') as command:
+            self.invoke('uninstall')
+        self.assertEqual(command.call_args_list[0].args[0], ['systemctl', '--user', 'disable', '--now', starter.TIMER])
+        self.assertEqual(command.call_args_list[1].args[0], ['systemctl', '--user', 'stop', 'mac-starter-appearance.service'])
+
+    def test_stop_jobs_ignores_only_confirmed_missing_units(self):
+        def missing(command, capture=False):
+            if command[2] == 'show':
+                return 'not-found'
+            raise subprocess.CalledProcessError(5, command)
+        with patch.object(starter, 'timer_command', side_effect=missing) as command:
+            starter.stop_appearance_jobs()
+        self.assertEqual(command.call_count, 4)
+        with patch.object(starter, 'timer_command', side_effect=[subprocess.CalledProcessError(1, ['systemctl']), 'loaded']):
+            with self.assertRaises(subprocess.CalledProcessError):
+                starter.stop_appearance_jobs()
+
+    def test_timer_restore_recovers_at_every_uninstall_write(self):
+        # Preexisting identical units stay unowned and must recover their runtime enablement.
+        for suffix in ('service', 'timer'):
+            self.write(self.home / '.config/systemd/user' / ('mac-starter-appearance.' + suffix),
+                       (self.assets / 'assets/appearance' / ('mac-starter-appearance.' + suffix)).read_text())
+        self.invoke('install')
+        self.write(self.home / starter.TIMER_STATE, json.dumps({'enabled': 'enabled-runtime', 'active': True}))
+        baseline = self.snapshot()
+        calls = []
+        def command(command, capture=False):
+            calls.append(command)
+            if command[2] == 'disable':
+                self.assertTrue((self.home / '.config/systemd/user' / starter.TIMER).exists())
+            if command[2] == 'daemon-reload':
+                self.assertFalse((self.home / starter.APPEARANCE).exists())
+            return ''
+        with patch.object(starter.Path, 'home', return_value=self.home), patch.object(starter, 'timer_command', side_effect=command):
+            events = self.durable_writes('uninstall')
+            self.assertEqual(calls[:2], [
+                ['systemctl', '--user', 'disable', '--now', starter.TIMER],
+                ['systemctl', '--user', 'stop', 'mac-starter-appearance.service']])
+            self.assertEqual(calls[-2:], [
+                ['systemctl', '--user', 'enable', '--runtime', starter.TIMER],
+                ['systemctl', '--user', 'start', starter.TIMER]])
+            for index, event in enumerate(events):
+                for when in ('before', 'after'):
+                    with self.subTest(write=index, event=event, when=when):
+                        self.restore(baseline)
+                        self.interrupt('uninstall', index, when)
+                        self.invoke('uninstall')
+                        self.assertFalse((self.home / starter.TIMER_STATE).exists())
+                        self.assertFalse((self.home / starter.STATE / 'journal.json').exists())
+                        self.assertTrue((self.home / '.config/systemd/user' / starter.TIMER).exists())
 
     def test_repeat_install_resets_old_progress_before_replaying(self):
         self.invoke('install')

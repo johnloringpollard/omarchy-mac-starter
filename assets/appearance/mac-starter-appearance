@@ -1,0 +1,226 @@
+#!/usr/bin/env python3
+"""Choose a fixed light or dark theme, or follow a local-time schedule."""
+import argparse
+import contextlib
+from dataclasses import dataclass
+from datetime import datetime, timedelta
+import fcntl
+import json
+import os
+from pathlib import Path
+import re
+import subprocess
+import sys
+import tempfile
+
+THEMES = {"light": "mac-starter", "dark": "mac-starter-dark"}
+DEFAULT_CONFIG = {"light": "07:00", "dark": "19:00", "enabled": False, "mode": "auto"}
+
+
+def clock_time(value):
+    if not isinstance(value, str) or not re.fullmatch(r"(?:[01]\d|2[0-3]):[0-5]\d", value):
+        raise ValueError("Schedule times must use HH:MM, from 00:00 to 23:59")
+    return datetime.strptime(value, "%H:%M").time()
+
+
+def validate_config(config):
+    if not isinstance(config, dict):
+        raise ValueError("Configuration must be a JSON object")
+    result = DEFAULT_CONFIG | config
+    for kind in THEMES:
+        clock_time(result[kind])
+    if result["light"] == result["dark"]:
+        raise ValueError("Light and dark times must differ")
+    if type(result["enabled"]) is not bool:
+        raise ValueError("Configuration enabled must be true or false")
+    if result["mode"] not in ("auto", "light", "dark"):
+        raise ValueError("Mode must be auto, light, or dark")
+    return result
+
+
+@dataclass(frozen=True)
+class Interval:
+    kind: str
+    anchor: str
+    next_kind: str
+    next_time: datetime
+
+
+def schedule_interval(config, now=None):
+    """Resolve daily events through OS local time, including each day's DST rules."""
+    now = now or datetime.now().astimezone()
+    local_date = datetime.fromtimestamp(now.timestamp()).date()
+    events = []
+    for offset in range(-2, 3):
+        day = local_date + timedelta(days=offset)
+        for kind in THEMES:
+            wall = datetime.combine(day, clock_time(config[kind]))
+            # timestamp uses OS timezone rules; gaps move forward, folds use the first occurrence.
+            events.append((wall.timestamp(), wall, kind, f"{day}/{kind}/{config[kind]}"))
+    events.sort()
+    previous = max(event for event in events if event[0] <= now.timestamp())
+    following = min(event for event in events if event[0] > now.timestamp())
+    return Interval(previous[2], previous[3], following[2],
+                    datetime.fromtimestamp(following[0]).astimezone())
+
+
+def read_json(path, default):
+    try:
+        return json.loads(path.read_text())
+    except FileNotFoundError:
+        return default.copy()
+
+
+def atomic_json(path, value):
+    path.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
+    descriptor, temporary = tempfile.mkstemp(prefix=f".{path.name}.", dir=path.parent)
+    try:
+        with os.fdopen(descriptor, "w") as output:
+            json.dump(value, output, indent=2)
+            output.write("\n")
+            output.flush()
+            os.fsync(output.fileno())
+        os.replace(temporary, path)
+    finally:
+        if os.path.exists(temporary):
+            os.unlink(temporary)
+
+
+class Scheduler:
+    def __init__(self, config_dir=None, state_dir=None, theme_file=None, apply=None):
+        home = Path.home()
+        self.config_file = Path(config_dir or Path(os.environ.get("XDG_CONFIG_HOME") or home / ".config") / "mac-starter-appearance") / "config.json"
+        self.state_dir = Path(state_dir or Path(os.environ.get("XDG_STATE_HOME") or home / ".local/state") / "mac-starter-appearance")
+        self.state_file = self.state_dir / "state.json"
+        self.theme_file = Path(theme_file or home / ".local/state/omarchy/current/theme.name")
+        self.apply = apply or self.apply_theme
+
+    @staticmethod
+    def apply_theme(theme):
+        subprocess.run(["omarchy", "theme", "set", theme], check=True)
+
+    @contextlib.contextmanager
+    def lock(self):
+        self.state_dir.mkdir(parents=True, exist_ok=True, mode=0o700)
+        with (self.state_dir / "lock").open("a") as lock:
+            fcntl.flock(lock, fcntl.LOCK_EX)
+            yield
+
+    def current_theme(self):
+        try:
+            return self.theme_file.read_text().strip()
+        except FileNotFoundError:
+            return None
+
+    def run(self, command, times=(), now=None):
+        """Execute one command, serializing theme application with state persistence."""
+        with self.lock():
+            config = validate_config(read_json(self.config_file, DEFAULT_CONFIG))
+            state = read_json(self.state_file, {})
+            if not isinstance(state, dict):
+                raise ValueError("State must be a JSON object")
+            now = now or datetime.now().astimezone()
+            current = self.current_theme()
+            if command == "enable":
+                config["enabled"] = True
+                atomic_json(self.config_file, config)
+            if command == "schedule":
+                config = validate_config(config | dict(zip(("light", "dark"), times)))
+                atomic_json(self.config_file, config)
+                state.pop("hold_interval", None)
+            interval = schedule_interval(config, now)
+            if command == "apply":
+                command = config["mode"]
+            if command in ("auto", "light", "dark"):
+                config["enabled"] = True
+                config["mode"] = command
+                desired = THEMES[interval.kind if command == "auto" else command]
+                if current != desired:
+                    self.apply(desired)
+                current = desired
+                state = {"last_theme": desired}
+                atomic_json(self.config_file, config)
+                atomic_json(self.state_file, state)
+            elif command in ("check", "schedule", "enable") and config["enabled"]:
+                if current in THEMES.values() and config["mode"] != "auto":
+                    desired = THEMES[config["mode"]]
+                    if current != desired:
+                        self.apply(desired)
+                    current = desired
+                    state = {"last_theme": desired}
+                    atomic_json(self.state_file, state)
+                elif current in THEMES.values():
+                    if state.get("last_theme") and current != state["last_theme"]:
+                        state["hold_interval"] = interval.anchor
+                    if state.get("hold_interval") != interval.anchor:
+                        state.pop("hold_interval", None)
+                        desired = THEMES[interval.kind]
+                        if current != desired:
+                            self.apply(desired)
+                        current = desired
+                    state["last_theme"] = current
+                    atomic_json(self.state_file, state)
+                else:
+                    # Returning through the theme picker should also count as a manual choice.
+                    state["last_theme"] = current
+                    state.pop("hold_interval", None)
+                    atomic_json(self.state_file, state)
+            automatic = config["enabled"] and config["mode"] == "auto"
+            hold = automatic and state.get("hold_interval") == interval.anchor
+            return {
+                "mode": "disabled" if not config["enabled"] else "paused-other-theme" if current not in THEMES.values() else config["mode"] if not automatic else "hold" if hold else "auto",
+                "preference": config["mode"],
+                "current_theme": current,
+                "schedule": {kind: config[kind] for kind in THEMES},
+                "timezone": datetime.fromtimestamp(now.timestamp()).astimezone().tzname(),
+                "local_time": datetime.fromtimestamp(now.timestamp()).astimezone().isoformat(),
+                "scheduled_theme": THEMES[interval.kind],
+                "next_transition": interval.next_time.isoformat() if automatic else None,
+                "next_theme": THEMES[interval.next_kind] if automatic else None,
+                "hold_until": interval.next_time.isoformat() if hold else None,
+            }
+
+
+def choose_mode(scheduler):
+    status = scheduler.run("status")
+    labels = {"light": "Always light", "dark": "Always dark", "auto": "Automatic"}
+    prompt = "Appearance: " + labels[status["preference"]]
+    if status["mode"] == "disabled":
+        prompt = "Appearance"
+    selection = subprocess.run(
+        ["omarchy", "menu", "select", prompt, *labels.values(), "--", "--width", "440"],
+        text=True, capture_output=True,
+    )
+    if selection.returncode != 0 or not selection.stdout.strip():
+        return None
+    selected = selection.stdout.strip()
+    for command, label in labels.items():
+        if selected == label:
+            if command == "auto":
+                subprocess.run(["systemctl", "--user", "enable", "--now", "mac-starter-appearance.timer"], check=True, capture_output=True, text=True)
+            return scheduler.run(command)
+    raise ValueError("Unrecognized appearance choice")
+
+
+def main():
+    parser = argparse.ArgumentParser(description=__doc__)
+    commands = parser.add_subparsers(dest="command", required=True)
+    for command in ("status", "auto", "light", "dark", "check", "enable", "menu", "apply"):
+        commands.add_parser(command)
+    schedule = commands.add_parser("schedule", help="set local light and dark start times")
+    schedule.add_argument("light")
+    schedule.add_argument("dark")
+    args = parser.parse_args()
+    try:
+        scheduler = Scheduler()
+        result = choose_mode(scheduler) if args.command == "menu" else scheduler.run(args.command, (args.light, args.dark) if args.command == "schedule" else ())
+    except (OSError, ValueError, subprocess.CalledProcessError) as error:
+        print(f"mac-starter-appearance: {error}", file=sys.stderr)
+        return 1
+    if result is not None:
+        print(json.dumps(result, indent=2))
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

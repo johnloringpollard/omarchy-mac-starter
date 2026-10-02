@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Scoped, journaled Omarchy configuration installer. No session subprocesses."""
+"""Scoped, journaled Omarchy configuration installer."""
 from __future__ import annotations
 
 import argparse
@@ -10,6 +10,7 @@ import os
 from pathlib import Path
 import re
 import sys
+import subprocess
 import tempfile
 import tomllib
 import uuid
@@ -20,6 +21,9 @@ SHELL = '.config/omarchy/shell.json'
 TOML = '.config/omarchy/shell.toml'
 HYPR = '.config/hypr/hyprland.lua'
 ABSENT = {'absent': True}
+APPEARANCE = '.local/bin/mac-starter-appearance'
+TIMER = 'mac-starter-appearance.timer'
+TIMER_STATE = STATE + '/appearance-timer.json'
 
 
 class Conflict(Exception):
@@ -233,6 +237,55 @@ def operate(fs, operation, value=None, write=False):
     return current
 
 
+def timer_command(command, capture=False):
+    result = subprocess.run(command, check=True, text=True,
+                            stdout=subprocess.PIPE if capture else None)
+    return (result.stdout or '').strip()
+
+
+def remember_timer(home, runner=timer_command):
+    fs = Files(home, apply=True)
+    if fs.read(TIMER_STATE):
+        return
+    values = []
+    for query in ('is-enabled', 'is-active'):
+        try:
+            value = runner(['systemctl', '--user', query, TIMER], capture=True)
+        except subprocess.CalledProcessError as error:
+            value = (error.stdout or '').strip()
+        values.append(value)
+    enabled, active = values
+    if enabled not in ('enabled', 'enabled-runtime', 'disabled', 'not-found') or active not in ('active', 'inactive', 'failed', 'unknown'):
+        raise Conflict(f'Cannot manage appearance timer with state {enabled!r}, {active!r}')
+    fs.write(TIMER_STATE, (json.dumps({'enabled': enabled, 'active': active == 'active'}) + '\n').encode())
+
+
+def stop_appearance_jobs():
+    for action, unit in [('disable', TIMER), ('stop', 'mac-starter-appearance.service')]:
+        command = ['systemctl', '--user', action]
+        if action == 'disable':
+            command.append('--now')
+        try:
+            timer_command([*command, unit])
+        except subprocess.CalledProcessError:
+            loaded = timer_command(['systemctl', '--user', 'show', '--property=LoadState', '--value', unit], capture=True)
+            if loaded != 'not-found':
+                raise
+
+
+def restore_timer(home):
+    fs = Files(home, apply=True)
+    prior = fs.json(TIMER_STATE)
+    timer_command(['systemctl', '--user', 'daemon-reload'])
+    if prior.get('enabled') in ('enabled', 'enabled-runtime'):
+        command = ['systemctl', '--user', 'enable']
+        if prior['enabled'] == 'enabled-runtime':
+            command.append('--runtime')
+        timer_command([*command, TIMER])
+    if prior.get('active'):
+        timer_command(['systemctl', '--user', 'start', TIMER])
+
+
 def plan(fs, modules):
     if not fs.read(HYPR) or not fs.read(SHELL):
         raise Conflict('Expected an existing Lua-based Omarchy installation: hyprland.lua and shell.json are required')
@@ -259,9 +312,17 @@ def plan(fs, modules):
     if 'desktop' in modules:
         if fs.read('.config/omarchy/hooks/theme-set.d/apple-desktop') and fs.read('.local/state/omarchy/apple/active.json'):
             raise Conflict('Legacy Apple theme restore hook detected. Follow docs/migration.md before installing.')
-        for source in sorted((ROOT / 'assets/theme').rglob('*')):
-            if source.is_file():
-                add('file', '.config/omarchy/themes/mac-starter/' + str(source.relative_to(ROOT / 'assets/theme')), encoded(source.read_bytes()))
+        for directory, slug in [('theme', 'mac-starter'), ('theme-dark', 'mac-starter-dark')]:
+            for source in sorted((ROOT / 'assets' / directory).rglob('*')):
+                if source.is_file():
+                    add('file', f'.config/omarchy/themes/{slug}/' + str(source.relative_to(ROOT / 'assets' / directory)), encoded(source.read_bytes()))
+        for filename, destination in [
+            ('mac-starter-appearance', APPEARANCE),
+            ('mac-starter-appearance.service', '.config/systemd/user/mac-starter-appearance.service'),
+            (TIMER, '.config/systemd/user/' + TIMER),
+            ('mac-starter-appearance.desktop', '.local/share/applications/mac-starter-appearance.desktop'),
+        ]:
+            add('file', destination, encoded((ROOT / 'assets/appearance' / filename).read_bytes()))
         for source in sorted((ROOT / 'assets/fonts').iterdir()):
             add('file', '.local/share/fonts/mac-starter/' + source.name, encoded(source.read_bytes()))
         add('file', '.config/fontconfig/conf.d/99-mac-starter.conf', encoded((ROOT / 'assets/apple-ui.conf').read_bytes()))
@@ -277,7 +338,7 @@ def plan(fs, modules):
             original = plugin['omarchy']['clonedFrom']
             if find_widget(data, original):
                 add('rename', SHELL, plugin['id'], id=original, replacement=plugin['id'])
-        for section, key, value in [('font', 'base-size', 13), ('popups', 'background', '#ffffff'), ('popups', 'background-alpha', 0.75)]:
+        for section, key, value in [('font', 'base-size', 13), ('popups', 'background', ABSENT), ('popups', 'background-alpha', ABSENT)]:
             add('toml', TOML, value, section=section, key=key)
         for keys, value in [(['bar', 'position'], 'top'), (['bar', 'transparent'], True), (['bar', 'centerAnchor'], '')]:
             add('json', SHELL, value, keys=keys)
@@ -338,9 +399,16 @@ def run(args):
     uninstall = args.command == 'uninstall'
     if uninstall and not journal:
         if args.apply:
+            if home == Path.home().resolve() and fs.read(TIMER_STATE):
+                restore_timer(home)
+                Files(home, apply=True).write(TIMER_STATE, None)
             Files(home, apply=True).write(progress_name, None)
         print('Nothing installed.')
         return 0
+    if uninstall and 'desktop' in journal['modules']:
+        current_theme = (fs.read('.local/state/omarchy/current/theme.name') or b'').decode().strip()
+        if current_theme in ('mac-starter', 'mac-starter-dark'):
+            raise Conflict('Switch to another theme before uninstalling the Mac starter desktop')
     if uninstall and any(op['path'].startswith('.config/omarchy/ui/panel-shadows/')
                          and op['before'] == ABSENT for op in journal['operations']):
         receipts = fs.path(STATE + '/plugins')
@@ -382,6 +450,13 @@ def run(args):
         print('Preview only. Repeat with --apply to write these changes.')
         return 0
     fs = Files(home, apply=True)
+    manage_timer = uninstall and home == Path.home().resolve() and (
+        fs.read(TIMER_STATE) is not None or any(op['path'] == '.config/systemd/user/' + TIMER for op in journal['operations']))
+    if manage_timer:
+        stop_appearance_jobs()
+        current_theme = (Files(home).read('.local/state/omarchy/current/theme.name') or b'').decode().strip()
+        if current_theme in ('mac-starter', 'mac-starter-dark'):
+            raise Conflict('Appearance changed while stopping its jobs. Switch to another theme before uninstalling.')
     if journal['status'] != phase:
         fs.write(progress_name, (json.dumps({'generation': journal.get('generation'),
                  'phase': phase, 'completed': 0}) + '\n').encode())
@@ -397,7 +472,11 @@ def run(args):
         fs.write(progress_name, (json.dumps({'generation': journal.get('generation'),
                  'phase': phase, 'completed': index}) + '\n').encode())
     if uninstall:
+        if manage_timer:
+            restore_timer(home)
         fs.write(journal_name, None)
+        if manage_timer:
+            fs.write(TIMER_STATE, None)
         fs.write(progress_name, None)
         print('Uninstalled. Unrelated settings are preserved; empty directories may remain.')
     else:
@@ -405,18 +484,21 @@ def run(args):
         fs.write(journal_name, (json.dumps(journal, indent=2) + '\n').encode())
         print('Installed. No theme command or session reload was run.')
         if 'desktop' in journal['modules']:
-            print('To activate the full light palette, run separately: omarchy theme set mac-starter')
+            print('To activate appearance and its timer, run ./setup --yes')
     return 0
 
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('command', choices=['install', 'uninstall', 'doctor'])
-    parser.add_argument('--home', type=Path, default=Path.home())
+    parser.add_argument('--home', type=Path, help='stage into a separate home without changing the live session')
     parser.add_argument('--apply', action='store_true', help='Write changes; otherwise preview only')
     parser.add_argument('--modules', nargs='+', choices=['desktop', 'shortcuts'], default=['desktop', 'shortcuts'])
     args = parser.parse_args()
     try:
+        if args.home is not None and args.home.expanduser().resolve() == Path.home().resolve():
+            raise Conflict('--home must name a separate staging home')
+        args.home = args.home or Path.home()
         if args.apply and args.command != 'doctor':
             fs = Files(args.home)
             lock_path = fs.path(STATE + '/operation.lock')
@@ -425,7 +507,7 @@ def main():
                 fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
                 return run(args)
         return run(args)
-    except (Conflict, OSError, ValueError, KeyError, TypeError) as error:
+    except (Conflict, OSError, ValueError, KeyError, TypeError, subprocess.SubprocessError) as error:
         print(f'Error: {error}', file=sys.stderr)
         return 1
 

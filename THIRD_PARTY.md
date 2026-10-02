@@ -6,6 +6,8 @@ Original installer code, documentation, the local theme, and local patches are r
 | --- | --- | --- |
 | Omarchy-derived panel clones, popup component, and theme conventions | [Omarchy](https://github.com/omacom/omarchy), source system package 4.0.4-1 | [MIT, David Heinemeier Hansson](licenses/omarchy-MIT.txt) |
 | Inter 4.1 font | [Inter](https://github.com/rsms/inter/releases/tag/v4.1) | [SIL Open Font License](assets/fonts/LICENSE.txt) |
+| Light/dark palettes, Coastal Curves wallpapers, and appearance scheduler | [Omarchy Mac Style, commit 1b26d92](https://github.com/johnloringpollard/omarchy-mac-style/tree/1b26d921cce44a3293928cbee9fbad1ab4f8da0b) | Root MIT license; scheduler adapted for starter-owned names and activation |
+| Tokyo Night terminal palette | [Folke Lemaitre](https://github.com/folke/tokyonight.nvim) | [Apache 2.0 notice](licenses/TokyoNight-LICENSE.txt) |
 | Silver Coast wallpaper | Original SVG and PNG from the local Apple-inspired theme | Root MIT license; editable source at `assets/silver-coast.svg` |
 | Magic Mouse patch | [maikunari/omarchy-magic-mouse](https://github.com/maikunari/omarchy-magic-mouse) | [Upstream MIT notice](licenses/magic-mouse-MIT.txt) |
 | AirPlay patch | [ETroll/omarchy-airplay](https://github.com/ETroll/omarchy-airplay) | [Upstream MIT notice](licenses/airplay-MIT.txt) |

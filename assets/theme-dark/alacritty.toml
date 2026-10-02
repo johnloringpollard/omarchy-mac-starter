@@ -1,0 +1,48 @@
+# Tokyo Night terminal colors, preserved independently of the light desktop palette.
+[colors.primary]
+background = "#1a1b26"
+foreground = "#a9b1d6"
+
+[colors.cursor]
+text = "#1a1b26"
+cursor = "#c0caf5"
+
+[colors.vi_mode_cursor]
+text = "#1a1b26"
+cursor = "#c0caf5"
+
+[colors.search.matches]
+foreground = "#1a1b26"
+background = "#e0af68"
+
+[colors.search.focused_match]
+foreground = "#1a1b26"
+background = "#f7768e"
+
+[colors.footer_bar]
+foreground = "#1a1b26"
+background = "#a9b1d6"
+
+[colors.selection]
+text = "#c0caf5"
+background = "#292e42"
+
+[colors.normal]
+black = "#1a1b26"
+red = "#f7768e"
+green = "#9ece6a"
+yellow = "#e0af68"
+blue = "#7aa2f7"
+magenta = "#ad8ee6"
+cyan = "#449dab"
+white = "#a9b1d6"
+
+[colors.bright]
+black = "#414868"
+red = "#ff7a93"
+green = "#b9f27c"
+yellow = "#ff9e64"
+blue = "#7da6ff"
+magenta = "#bb9af7"
+cyan = "#0db9d7"
+white = "#c0caf5"

@@ -3,6 +3,7 @@ import json
 from pathlib import Path
 import subprocess
 import tempfile
+import tomllib
 import unittest
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -39,6 +40,26 @@ class InstallerTest(unittest.TestCase):
         result = subprocess.run([str(ROOT / command), '--home', str(self.home), *args], capture_output=True, text=True)
         self.assertEqual(result.returncode, 0 if success else 1, result.stdout + result.stderr)
         return result
+
+    def test_both_active_starter_themes_block_uninstall(self):
+        self.cli('install', '--apply')
+        for theme in ('mac-starter', 'mac-starter-dark'):
+            self.write('.local/state/omarchy/current/theme.name', theme + '\n')
+            result = self.cli('uninstall', '--apply', success=False)
+            self.assertIn('Switch to another theme', result.stderr)
+            self.assertTrue((self.home / '.local/bin/mac-starter-appearance').exists())
+        self.write('.local/state/omarchy/current/theme.name', 'tokyo-night\n')
+        self.cli('uninstall', '--apply')
+
+    def test_popup_overrides_released_and_restored_with_other_settings(self):
+        original = '[popups]\nbackground = "#abcdef"\nbackground-alpha = 0.4\nborder-width = 7\n'
+        self.write(starter.TOML, original)
+        self.cli('install', '--apply')
+        self.assertEqual(tomllib.loads((self.home / starter.TOML).read_text())['popups'], {'border-width': 7})
+        self.assertTrue((self.home / '.config/omarchy/themes/mac-starter-dark/colors.toml').exists())
+        self.assertTrue((self.home / '.config/systemd/user/mac-starter-appearance.timer').exists())
+        self.cli('uninstall', '--apply')
+        self.assertEqual(tomllib.loads((self.home / starter.TOML).read_text())['popups'], tomllib.loads(original)['popups'])
 
     def test_preview_makes_no_files(self):
         before = {str(p): p.read_bytes() for p in self.home.rglob('*') if p.is_file()}

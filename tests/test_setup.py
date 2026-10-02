@@ -33,6 +33,10 @@ class SetupTests(unittest.TestCase):
 
     def run_command(self, command, cwd=None, capture=False):
         self.commands.append((command, cwd))
+        if command[:3] == ['systemctl', '--user', 'is-enabled']:
+            return 'disabled'
+        if command[:3] == ['systemctl', '--user', 'is-active']:
+            return 'inactive'
         if command[0] == 'git':
             return self.tool.modules[self.selected]['commit']
         if command[:2] == [str(ROOT / 'plugins'), 'install']:
@@ -53,6 +57,43 @@ class SetupTests(unittest.TestCase):
             'shadows': any(p['kind'] == 'shadows' for p in module['patches']), 'files': files})
         return target, receipt
 
+    def test_old_desktop_requires_reinstall_before_commands(self):
+        journal = self.home / '.local/state/omarchy-mac-starter/journal.json'
+        setup.plugins.atomic_json(journal, {'version': 1, 'home': str(self.home),
+            'status': 'installed', 'modules': ['desktop']})
+        with self.assertRaisesRegex(setup.plugins.Refused, 'predates appearance controls'):
+            setup.setup(self.home, [])
+        self.assertEqual(self.commands, [])
+
+    def test_timer_state_saved_before_enable_and_preserved_on_retry(self):
+        record = self.home / setup.starter.TIMER_STATE
+        def command(command, **kwargs):
+            if command[:3] == ['systemctl', '--user', 'is-enabled']:
+                return 'enabled-runtime'
+            if command[:3] == ['systemctl', '--user', 'is-active']:
+                return 'active'
+            if command[:3] == ['systemctl', '--user', 'enable']:
+                self.assertEqual(json.loads(record.read_text()), {'enabled': 'enabled-runtime', 'active': True})
+                raise subprocess.CalledProcessError(1, command)
+            return self.run_command(command, **kwargs)
+        self.runner.side_effect = command
+        with self.assertRaises(subprocess.CalledProcessError):
+            setup.setup(self.home, [])
+        self.runner.side_effect = self.run_command
+        setup.setup(self.home, [])
+        self.assertEqual(json.loads(record.read_text()), {'enabled': 'enabled-runtime', 'active': True})
+        self.assertEqual(record.stat().st_mode & 0o777, 0o600)
+
+    def test_timer_query_failure_blocks_core_apply(self):
+        def command(command, **kwargs):
+            if command[:2] == ['systemctl', '--user']:
+                raise subprocess.CalledProcessError(1, command, output='')
+            return self.run_command(command, **kwargs)
+        self.runner.side_effect = command
+        with self.assertRaises(setup.starter.Conflict):
+            setup.setup(self.home, [])
+        self.assertFalse(any('--apply' in c for c, _ in self.commands))
+
     def test_dry_run_never_prompts_executes_or_writes(self):
         with patch.object(setup.subprocess, 'run', side_effect=AssertionError('subprocess')), patch('builtins.input', side_effect=AssertionError('prompt')):
             self.assertEqual(setup.main(['--dry-run', '--home', str(self.home), '--plugins', 'airpods']), 0)
@@ -62,8 +103,13 @@ class SetupTests(unittest.TestCase):
     def test_yes_defaults_to_core_and_activation_order(self):
         with patch.object(setup.Path, 'home', return_value=self.home), patch('builtins.input', side_effect=AssertionError('prompt')):
             self.assertEqual(setup.main(['--yes']), 0)
-        self.assertEqual([c for c, _ in self.commands], [[str(ROOT / 'install')], [str(ROOT / 'install'), '--apply'],
-            ['fc-cache', '-f'], ['omarchy', 'theme', 'set', 'mac-starter'], ['omarchy', 'restart', 'shell'],
+        self.assertEqual([c for c, _ in self.commands], [[str(ROOT / 'install')],
+            ['systemctl', '--user', 'is-enabled', setup.starter.TIMER],
+            ['systemctl', '--user', 'is-active', setup.starter.TIMER],
+            [str(ROOT / 'install'), '--apply'],
+            ['fc-cache', '-f'], ['python3', str(self.home / setup.starter.APPEARANCE), 'apply'],
+            ['systemctl', '--user', 'daemon-reload'],
+            ['systemctl', '--user', 'enable', '--now', setup.starter.TIMER], ['omarchy', 'restart', 'shell'],
             ['hyprctl', 'reload'], ['hyprctl', 'configerrors']])
 
     def test_staging_runs_only_core_and_plugin_clis(self):
@@ -122,13 +168,26 @@ class SetupTests(unittest.TestCase):
         setup.setup(self.home, ['activity-monitor'])
         self.assertTrue(any('--with-shadows' in c for c, _ in self.commands))
 
+    def test_core_only_install_activates_once_through_setup(self):
+        journal = self.home / '.local/state/omarchy-mac-starter/journal.json'
+        setup.plugins.atomic_json(journal, {'version': 1, 'home': str(self.home),
+            'status': 'installed', 'modules': ['desktop']})
+        runtime = self.home / setup.starter.APPEARANCE
+        runtime.parent.mkdir(parents=True)
+        runtime.write_text('# staged runtime')
+        setup.setup(self.home, [])
+        setup.setup(self.home, [])
+        self.assertEqual(sum(c == ['python3', str(runtime), 'apply'] for c, _ in self.commands), 1)
+        self.assertEqual(sum(c == ['systemctl', '--user', 'enable', '--now', setup.starter.TIMER] for c, _ in self.commands), 1)
+        self.assertFalse(any(c[0] == str(ROOT / 'install') for c, _ in self.commands))
+
     def test_pending_activation_retries_after_core_finished(self):
         journal = self.home / '.local/state/omarchy-mac-starter/journal.json'
         setup.plugins.atomic_json(journal, {'version': 1, 'home': str(self.home), 'status': 'installed'})
         state_path = journal.with_name('setup.json')
         setup.plugins.atomic_json(state_path, {'backends': {}, 'activation_pending': True, 'previous_theme': 'old'})
         setup.setup(self.home, [])
-        self.assertIn((['omarchy', 'theme', 'set', 'mac-starter'], None), self.commands)
+        self.assertIn((['python3', str(self.home / setup.starter.APPEARANCE), 'apply'], None), self.commands)
         self.assertFalse(json.loads(state_path.read_text())['activation_pending'])
 
     def test_changed_owned_revision_refused(self):
@@ -217,8 +276,8 @@ class SetupTests(unittest.TestCase):
 
     def test_configuration_errors_fail(self):
         def errors(command, **kwargs):
-            self.run_command(command, **kwargs)
-            return 'bad binding' if command == ['hyprctl', 'configerrors'] else ''
+            result = self.run_command(command, **kwargs)
+            return 'bad binding' if command == ['hyprctl', 'configerrors'] else result
         self.runner.side_effect = errors
         with self.assertRaisesRegex(setup.plugins.Refused, 'bad binding'):
             setup.setup(self.home, [])

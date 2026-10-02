@@ -1,0 +1,9 @@
+[Desktop Entry]
+Type=Application
+Name=Mac Starter Appearance
+Comment=Choose always light, always dark, or automatic appearance
+Exec=/bin/sh -c "exec /usr/bin/python3 \\"\\$HOME/.local/bin/mac-starter-appearance\\" menu"
+Icon=preferences-desktop-theme
+Terminal=false
+Categories=Settings;DesktopSettings;
+Keywords=appearance;theme;light;dark;automatic;

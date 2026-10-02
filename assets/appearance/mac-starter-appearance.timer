@@ -1,0 +1,11 @@
+[Unit]
+Description=Check the Mac starter theme schedule every minute
+
+[Timer]
+OnStartupSec=30s
+OnUnitActiveSec=1min
+AccuracySec=5s
+Unit=mac-starter-appearance.service
+
+[Install]
+WantedBy=timers.target

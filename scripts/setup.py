@@ -9,6 +9,7 @@ import subprocess
 import sys
 
 import plugins
+import starter
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -89,11 +90,14 @@ def setup(home, selected, sandbox=False):
     if journal and (journal.get('version') != 1 or journal.get('home') != str(home)):
         raise plugins.Refused('Core journal version or home does not match')
     configured = bool(journal and journal.get('status') == 'installed')
+    if (configured and 'desktop' in journal.get('modules', [])
+            and not (home / starter.APPEARANCE).is_file()):
+        raise plugins.Refused('This desktop predates appearance controls. Switch to another theme, uninstall it, then rerun setup; see docs/migration.md')
     # New installs must reject legacy hooks before packages or downloads.
     if not configured:
         run(core)
     else:
-        print('Desktop already installed; preserving your desktop settings and current theme.')
+        print('Desktop files already installed; preserving your desktop settings.')
     active = []
     missing = []
     for name in selected:
@@ -110,10 +114,12 @@ def setup(home, selected, sandbox=False):
     pending = state.setdefault('plugins_pending', {})
     for name in missing:
         state['backends'].pop(name, None)
+    first_activation = not configured or ('desktop' in journal.get('modules', []) and 'activation_pending' not in state)
+    if first_activation and not sandbox:
+        starter.remember_timer(home, run)
+        state['activation_pending'] = True
+        plugins.atomic_json(state_path, state)
     if not configured:
-        if not sandbox:
-            state['activation_pending'] = True
-            plugins.atomic_json(state_path, state)
         run([*core, '--apply'])
     if not sandbox:
         packages = sorted({p for name in active for p in tool.module(name)['packages']})
@@ -144,7 +150,9 @@ def setup(home, selected, sandbox=False):
             state['previous_theme'] = previous.read_text().strip() if previous.is_file() else None
             plugins.atomic_json(state_path, state)
         run(['fc-cache', '-f'])
-        run(['omarchy', 'theme', 'set', 'mac-starter'])
+        run(['python3', str(home / starter.APPEARANCE), 'apply'])
+        run(['systemctl', '--user', 'daemon-reload'])
+        run(['systemctl', '--user', 'enable', '--now', starter.TIMER])
     run(['omarchy', 'restart', 'shell'])
     run(['hyprctl', 'reload'])
     errors = run(['hyprctl', 'configerrors'], capture=True)
@@ -183,7 +191,7 @@ def main(argv=None):
             print('Staging only; no package/backend/theme/reload commands.')
         else:
             print('Install Magic Mouse/AirPods backends and AirPlay service when selected; save prior theme,')
-            print('refresh fonts, activate mac-starter, restart the shell, reload and validate Hyprland.')
+            print('refresh fonts, apply saved appearance, enable its timer, restart the shell and validate Hyprland.')
         print('Account login, pairing, remote Mac setup, and plugin preferences are yours to configure.')
         if 'calendar' in selected:
             print('Calendar stays staged until you configure and enable it in plugin settings.')
@@ -194,7 +202,7 @@ def main(argv=None):
             return 0
         setup(home, selected, sandbox=args.home is not None)
         return 0
-    except (plugins.Refused, OSError, ValueError, KeyError, subprocess.SubprocessError) as error:
+    except (plugins.Refused, starter.Conflict, OSError, ValueError, KeyError, subprocess.SubprocessError) as error:
         print(f'Error: {error}\nSetup did not finish. Resolve the error and rerun the same selection.', file=sys.stderr)
         return 1
     except (KeyboardInterrupt, EOFError):

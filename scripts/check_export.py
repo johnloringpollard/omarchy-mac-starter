@@ -11,7 +11,10 @@ import tomllib
 import xml.etree.ElementTree as ET
 
 ROOT = Path(__file__).resolve().parents[1]
-BINARY_ASSETS = {'assets/fonts/Inter.ttc', 'assets/theme/backgrounds/01-silver-coast.png'}
+BINARY_ASSETS = {'assets/fonts/Inter.ttc', 'assets/theme/backgrounds/01-silver-coast.png',
+                 'assets/theme/backgrounds/01-coastal-curves.png',
+                 'assets/theme-dark/backgrounds/01-coastal-curves.png',
+                 'docs/apple-preview.png', 'docs/apple-dark-preview.png'}
 FORBIDDEN_COMPONENTS = {'.ssh', '.aws', '.kube', 'credentials.json', 'bridge.conf',
                         'AirPodsTrayApp', 'accounts', '.env', 'journal.json', 'progress.json',
                         'node_modules', '__pycache__', 'backups'}

@@ -23,3 +23,4 @@ jobs:
           luac -p modules/desktop.lua
           luac -p modules/shortcuts.lua
           luac -p assets/theme/hyprland.lua
+          luac -p assets/theme-dark/hyprland.lua

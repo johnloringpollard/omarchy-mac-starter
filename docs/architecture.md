@@ -6,7 +6,7 @@ The lower-level tools have two installation boundaries.
 
 `install` manages user configuration through `scripts/starter.py`. Each journal operation owns a file, Lua block, TOML value, JSON value, widget identity, or clock position. It records both the prior value and installed value before applying changes. Repeating an interrupted operation converges on those recorded values. A later conflicting edit stops the operation before its planned changes begin.
 
-The core `install` command installs a separate `mac-starter` theme and appends explicit Lua includes to `hyprland.lua`. It does not invoke theme hooks or restart the desktop. `setup` performs theme activation and the reload after that core step succeeds. The legacy Apple theme hook is detected before applying changes because it restored an entire historical bar layout and could discard later additions.
+The core `install` command installs separate `mac-starter` and `mac-starter-dark` themes and appends explicit Lua includes to `hyprland.lua`. It does not invoke theme hooks or restart the desktop. `setup` applies the saved appearance preference, enables the local-time timer, and reloads after that core step succeeds. The legacy Apple theme hook is detected before applying changes because it restored an entire historical bar layout and could discard later additions.
 
 Stock panel copies use the `macstarter.*` namespace. Only corresponding stock widgets already in the bar are replaced. Existing custom widgets, including OmaCal, retain their identities and settings. The supplied panel copies are tied to the documented Omarchy baseline and need review after shell API changes.
 
@@ -25,3 +25,9 @@ Update a dependency by reviewing its upstream changes, updating its full commit 
 Do not run `omarchy plugin update` on starter-managed patched checkouts. That bypasses the lock and may overwrite or conflict with the local patches. Preserve local edits and uninstall the source checkout before installing a different selection.
 
 Do not publish a home-directory snapshot. New exports must use an explicit file allowlist and pass `scripts/check_export.py`. Keep device identities, credentials, caches, logs, and installation journals local.
+
+## Appearance ownership
+
+The standalone appearance runtime is adapted from the Mac Style package at commit `1b26d921cce44a3293928cbee9fbad1ab4f8da0b`. Theme palettes, theme-local Hyprland settings, wallpapers, terminal files, and scheduler tests share that source. Starter adaptations use distinct theme names, command, launcher, service, timer, and configuration/state directories. The `apply` command explicitly activates the saved preference during setup.
+
+Preference and schedule files are mutable runtime state, separate from the core installation journal. They remain local after uninstall so a later installation can reuse them. Theme colors stay in each theme instead of global desktop overrides, allowing light and dark panels to switch together. The installer journals removal of global popup background and alpha overrides and restores them on uninstall.
