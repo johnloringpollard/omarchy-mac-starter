@@ -26,7 +26,7 @@ def choose(names):
         result = subprocess.run(['gum', 'choose', '--no-limit', '--header',
                                  'Optional plugins (Space selects; Enter continues)', *names],
                                 check=True, text=True, stdout=subprocess.PIPE)
-        return result.stdout.splitlines()
+        return [name.strip() for name in result.stdout.splitlines() if name.strip()]
     print('Optional plugins. Leave blank for the desktop and shortcuts only.')
     for index, name in enumerate(names, 1):
         print(f'  {index}. {name}')

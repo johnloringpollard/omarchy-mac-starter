@@ -288,6 +288,22 @@ class SetupTests(unittest.TestCase):
         self.assertEqual(prompt.call_count, 2)
         self.assertEqual(self.commands, [])
 
+    def test_gum_empty_selection_installs_core_only(self):
+        for output in ('', '\n', ' \n\n'):
+            with self.subTest(output=output), \
+                    patch.object(setup.shutil, 'which', return_value='/usr/bin/gum'), \
+                    patch.object(setup.subprocess, 'run', return_value=subprocess.CompletedProcess([], 0, stdout=output)), \
+                    patch('builtins.input', return_value='y') as prompt, \
+                    patch.object(setup, 'setup') as install:
+                self.assertEqual(setup.main([]), 0)
+                install.assert_called_once_with(Path.home().resolve(), [], sandbox=False)
+                prompt.assert_called_once()
+
+    def test_gum_selection_preserves_plugin_names(self):
+        with patch.object(setup.shutil, 'which', return_value='/usr/bin/gum'), \
+                patch.object(setup.subprocess, 'run', return_value=subprocess.CompletedProcess([], 0, stdout='airpods\ncalendar\n')):
+            self.assertEqual(setup.choose(['airpods', 'calendar']), ['airpods', 'calendar'])
+
 
 if __name__ == '__main__':
     unittest.main()
