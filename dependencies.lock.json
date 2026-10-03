@@ -22,7 +22,7 @@
       "patches": [
         {
           "path": "patches/magic-mouse-functional.patch",
-          "sha256": "5b6cd4ac5e7ff5d3fe01a2b7305b43b15bcd614cab80fc3fb2340d7facfe9ccc",
+          "sha256": "4c4c093ab640a298d8c7e99fb4b401cd020169762363b5fb185349ad1887aed7",
           "kind": "functional"
         },
         {

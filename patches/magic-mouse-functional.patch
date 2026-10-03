@@ -411,7 +411,17 @@ index eb1a5a5..18523a9 100755
  SUBSYSTEM=="hidraw", KERNELS=="0005:05AC:030D.*", TAG+="uaccess"
  """
  MODPROBE = b"""# omarchy-magic-mouse: let the mouse's own firmware decide left vs right click
-@@ -171,6 +173,7 @@ except FileNotFoundError:
+@@ -164,13 +166,13 @@
+ else:
+     os.write(pfd, b"0\n")
+     os.close(pfd)
+-try:
+-    os.lstat("/dev/uinput")
+-except FileNotFoundError:
+-    subprocess.run(["/usr/bin/modprobe", "uinput"], check=True)
++# Always load uinput: kmod-static-nodes pre-creates a root-only /dev/uinput, so
++# the node existing does not mean the module (and its udev device) does.
++subprocess.run(["/usr/bin/modprobe", "uinput"], check=True)
  subprocess.run(["/usr/bin/udevadm", "control", "--reload"], check=True)
  subprocess.run(["/usr/bin/udevadm", "trigger", "--subsystem-match=misc", "--subsystem-match=input",
                  "--subsystem-match=hidraw", "--action=add"], check=False)
