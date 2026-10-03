@@ -39,4 +39,21 @@ hl.config({
     workspace_swipe_forever = false, workspace_swipe_use_r = false,
   },
 })
-hl.gesture({ fingers = 3, direction = "horizontal", action = "workspace" })
+-- Hyprland rejects a second 3-finger horizontal gesture, so skip ours when
+-- the user's input.lua already enables one.
+local function has_workspace_gesture()
+  local file = io.open((os.getenv("HOME") or "") .. "/.config/hypr/input.lua")
+  if not file then return false end
+  for line in file:lines() do
+    if not line:match("^%s*%-%-") and line:match("hl%.gesture") and line:match("fingers%s*=%s*3")
+      and line:match('direction%s*=%s*"horizontal"') then
+      file:close()
+      return true
+    end
+  end
+  file:close()
+  return false
+end
+if not has_workspace_gesture() then
+  hl.gesture({ fingers = 3, direction = "horizontal", action = "workspace" })
+end
